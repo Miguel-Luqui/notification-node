@@ -29,9 +29,9 @@ services:
   # API HTTP que publica mensagens (publisher)
   notification-node:
     build:
-      context: ./notification-node
+      context: .            # IMPORTANTE: context é '.' porque o compose está dentro notification-node/
       dockerfile: Dockerfile
-    container_name: notification-node
+    container_name: notification-node-api
     environment:
       RABBITMQ_URL: amqp://rabbitmq:5672
       RABBITMQ_QUEUE: notifications
@@ -49,9 +49,9 @@ services:
   # Worker que consome a fila e envia e-mails
   notification-worker:
     build:
-      context: .
+      context: .            # build do mesmo Dockerfile na pasta atual
       dockerfile: Dockerfile
-    container_name: notification-worker
+    container_name: notification-node-worker
     command: ["node", "src/worker.js"]
     environment:
       RABBITMQ_URL: amqp://rabbitmq:5672
