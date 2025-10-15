@@ -49,7 +49,7 @@ services:
   # Worker que consome a fila e envia e-mails
   notification-worker:
     build:
-      context: ./notification-node
+      context: .
       dockerfile: Dockerfile
     container_name: notification-worker
     command: ["node", "src/worker.js"]
