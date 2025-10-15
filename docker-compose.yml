@@ -3,6 +3,7 @@ version: "3.8"
 # Compose para PoC: orquestra RabbitMQ, MailHog, API (publisher) e Worker (consumer).
 # Use este arquivo na raiz do projeto local para subir tudo com:
 #   docker compose up --build
+
 services:
   rabbitmq:
     image: rabbitmq:3.11-management
@@ -16,7 +17,6 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     restart: unless-stopped
-    # Observação: o service expõe UI em http://localhost:15672 (guest/guest)
 
   mailhog:
     image: mailhog/mailhog
@@ -33,7 +33,6 @@ services:
       dockerfile: Dockerfile
     container_name: notification-node
     environment:
-      # Apontando para o RabbitMQ e MailHog usados no compose
       RABBITMQ_URL: amqp://rabbitmq:5672
       RABBITMQ_QUEUE: notifications
       SMTP_HOST: mailhog
@@ -46,7 +45,6 @@ services:
       - rabbitmq
       - mailhog
     restart: unless-stopped
-    # Em PoC usamos depends_on simples. A aplicação já implementa reconexão.
 
   # Worker que consome a fila e envia e-mails
   notification-worker:
@@ -69,6 +67,5 @@ services:
       - mailhog
     restart: unless-stopped
 
-# Volume persistente para RabbitMQ (evita perda de filas em reinício do container)
 volumes:
   rabbitmq-data:
