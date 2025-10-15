@@ -2,6 +2,7 @@
   "name": "notification-node-poc",
   "version": "0.1.0",
   "description": "PoC microservice de notificações (email) usando RabbitMQ",
+  "type": "module",
   "main": "src/api.js",
   "scripts": {
     "start": "node src/api.js",
@@ -11,7 +12,9 @@
     "amqplib": "^0.10.3",
     "dotenv": "^16.1.4",
     "express": "^4.18.2",
-    "nodemailer": "^6.9.4"
+    "nodemailer": "^6.9.4",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^4.6.3"
   },
   "engines": {
     "node": ">=18"

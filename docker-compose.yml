@@ -1,44 +1,74 @@
 version: "3.8"
+
+# Compose para PoC: orquestra RabbitMQ, MailHog, API (publisher) e Worker (consumer).
+# Use este arquivo na raiz do projeto local para subir tudo com:
+#   docker compose up --build
 services:
   rabbitmq:
     image: rabbitmq:3.11-management
+    container_name: notification-node-rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672" # web UI
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    restart: unless-stopped
+    # Observação: o service expõe UI em http://localhost:15672 (guest/guest)
 
   mailhog:
     image: mailhog/mailhog
+    container_name: notification-node-mailhog
     ports:
-      - "1025:1025" # SMTP
-      - "8025:8025" # Web UI
+      - "1025:1025" # SMTP (worker envia aqui)
+      - "8025:8025" # UI web para visualizar e-mails
+    restart: unless-stopped
 
+  # API HTTP que publica mensagens (publisher)
   notification-node:
-    build: .
-    command: ["node", "src/api.js"]
+    build:
+      context: ./notification-node
+      dockerfile: Dockerfile
+    container_name: notification-node
     environment:
+      # Apontando para o RabbitMQ e MailHog usados no compose
       RABBITMQ_URL: amqp://rabbitmq:5672
       RABBITMQ_QUEUE: notifications
       SMTP_HOST: mailhog
       SMTP_PORT: "1025"
       EMAIL_FROM: "no-reply@local"
+      PORT: "3000"
     ports:
       - "3000:3000"
     depends_on:
       - rabbitmq
       - mailhog
+    restart: unless-stopped
+    # Em PoC usamos depends_on simples. A aplicação já implementa reconexão.
 
+  # Worker que consome a fila e envia e-mails
   notification-worker:
-    build: .
+    build:
+      context: ./notification-node
+      dockerfile: Dockerfile
+    container_name: notification-worker
     command: ["node", "src/worker.js"]
     environment:
       RABBITMQ_URL: amqp://rabbitmq:5672
       RABBITMQ_QUEUE: notifications
+      RABBITMQ_FAILED_QUEUE: notifications_failed
       SMTP_HOST: mailhog
       SMTP_PORT: "1025"
       EMAIL_FROM: "no-reply@local"
+      MAX_ATTEMPTS: "3"
+      REQUEUE_DELAY_MS: "2000"
     depends_on:
       - rabbitmq
       - mailhog
+    restart: unless-stopped
+
+# Volume persistente para RabbitMQ (evita perda de filas em reinício do container)
+volumes:
+  rabbitmq-data:
