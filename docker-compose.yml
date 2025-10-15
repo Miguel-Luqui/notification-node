@@ -1,0 +1,44 @@
+version: "3.8"
+services:
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    ports:
+      - "5672:5672"
+      - "15672:15672" # web UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+
+  notification-node:
+    build: .
+    command: ["node", "src/api.js"]
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      RABBITMQ_QUEUE: notifications
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      EMAIL_FROM: "no-reply@local"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rabbitmq
+      - mailhog
+
+  notification-worker:
+    build: .
+    command: ["node", "src/worker.js"]
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      RABBITMQ_QUEUE: notifications
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      EMAIL_FROM: "no-reply@local"
+    depends_on:
+      - rabbitmq
+      - mailhog
