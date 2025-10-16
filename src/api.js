@@ -13,37 +13,36 @@ dotenv.config();
  *   e fornece uma UI Swagger para facilitar testes durante a apresentação.
  */
 
-/**
- * Configurações (padrões para PoC)
- */
-const RABBIT_URL = process.env.RABBITMQ_URL ?? "amqp://rabbitmq:5672";
-const QUEUE = process.env.RABBITMQ_QUEUE ?? "notifications";
-const PORT = Number(process.env.PORT ?? 3000);
+/* ===========================
+   Config (centralizado)
+   =========================== */
+const CONFIG = {
+  RABBIT_URL: process.env.RABBITMQ_URL ?? "amqp://rabbitmq:5672",
+  QUEUE: process.env.RABBITMQ_QUEUE ?? "notifications",
+  PORT: Number(process.env.PORT ?? 3000),
+  // JWT / Auth (PoC)
+  JWT_SECRET: process.env.JWT_SECRET ?? "change_me",
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "1h",
+  ADMIN_USER: process.env.ADMIN_USER ?? "admin",
+  ADMIN_PASS: process.env.ADMIN_PASS ?? "secret",
+};
 
-// JWT / Auth (PoC)
-const JWT_SECRET = process.env.JWT_SECRET ?? "change_me";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? "1h";
-const ADMIN_USER = process.env.ADMIN_USER ?? "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS ?? "secret";
+const { RABBIT_URL, QUEUE, PORT, JWT_SECRET, JWT_EXPIRES_IN, ADMIN_USER, ADMIN_PASS } = CONFIG;
 
-/**
- * Estado de conexão com RabbitMQ (variáveis globais para simplificar o PoC)
- */
+/* ===========================
+   Estado de conexão com RabbitMQ
+   =========================== */
 let connection = null;
 let channel = null;
 let isConnected = false;
 let reconnectTimer = null;
 
-/**
- * Helper: sleep (ms)
- */
+/* Helper: sleep (ms) */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Conecta ao RabbitMQ com política simples de reconexão exponencial.
- * - Garante criação/existência da fila durável.
- * - Mantém `channel` e `connection` para publicação de mensagens.
- */
+/* ===========================
+   RabbitMQ connect + reconnection
+   =========================== */
 async function connectRabbit({ maxRetries = 10, initialDelayMs = 500 } = {}) {
   let attempt = 0;
   let delay = initialDelayMs;
@@ -51,9 +50,11 @@ async function connectRabbit({ maxRetries = 10, initialDelayMs = 500 } = {}) {
   while (attempt < maxRetries) {
     try {
       connection = await amqp.connect(RABBIT_URL);
+
       connection.on("error", (err) => {
         console.error("RabbitMQ connection error:", err?.message ?? err);
       });
+
       connection.on("close", () => {
         console.warn("RabbitMQ connection closed. Will attempt to reconnect.");
         isConnected = false;
@@ -64,7 +65,6 @@ async function connectRabbit({ maxRetries = 10, initialDelayMs = 500 } = {}) {
       channel = await connection.createChannel();
       await channel.assertQueue(QUEUE, { durable: true });
 
-      // Tratamento opcional de erro no channel
       channel.on("error", (err) => {
         console.error("RabbitMQ channel error:", err?.message ?? err);
       });
@@ -76,16 +76,13 @@ async function connectRabbit({ maxRetries = 10, initialDelayMs = 500 } = {}) {
       attempt += 1;
       console.warn(`Failed to connect to RabbitMQ (attempt ${attempt}/${maxRetries}): ${err?.message ?? err}`);
       await sleep(delay);
-      delay = Math.min(delay * 2, 10000); // backoff cap
+      delay = Math.min(delay * 2, 10000);
     }
   }
 
   throw new Error("Unable to connect to RabbitMQ after multiple attempts");
 }
 
-/**
- * Agenda tentativa de reconexão (evita múltiplos timers concorrentes)
- */
 function scheduleReconnect() {
   if (reconnectTimer) return;
   reconnectTimer = setTimeout(async () => {
@@ -94,89 +91,80 @@ function scheduleReconnect() {
       await connectRabbit();
     } catch (err) {
       console.error("Reconnect failed:", err?.message ?? err);
-      // re-schedule another attempt
       scheduleReconnect();
     }
   }, 2000);
 }
 
-/**
- * Publica um job na fila `QUEUE`.
- * - Lança se não houver conexão.
- * - Serializa payload para JSON e marca mensagem como persistent.
- */
+/* ===========================
+   Publicar mensagens (com tratamento)
+   =========================== */
 async function publishToQueue(payload) {
   if (!channel || !isConnected) {
     throw new Error("RabbitMQ not connected");
   }
 
-  const body = Buffer.from(JSON.stringify(payload), "utf8");
-  const ok = channel.sendToQueue(QUEUE, body, {
-    persistent: true,
-    contentType: "application/json",
-    messageId: payload.id?.toString(),
-  });
+  let body;
+  try {
+    body = Buffer.from(JSON.stringify(payload), "utf8");
+  } catch (err) {
+    // Falha ao serializar: payload inválido
+    throw new Error("Failed to serialize payload");
+  }
 
-  if (!ok) {
-    // Quando ok === false o buffer interno está cheio — em produção implementar backpressure corretamente
-    console.warn("RabbitMQ sendToQueue returned false (backpressure)");
+  try {
+    const ok = channel.sendToQueue(QUEUE, body, {
+      persistent: true,
+      contentType: "application/json",
+      messageId: payload.id?.toString(),
+    });
+
+    if (!ok) {
+      // backpressure: logamos para PoC
+      console.warn("RabbitMQ sendToQueue returned false (backpressure)");
+    }
+  } catch (err) {
+    // Encapsula erro para o caller
+    throw new Error(`Failed to send to queue: ${err?.message ?? err}`);
   }
 }
 
-/**
- * Express app
- *
- * Resumo:
- * - O Express cria um servidor HTTP simples que aceita requisições.
- * - `app.use(express.json())` permite que a API receba JSON no corpo das requisições.
- * - Expondo endpoints como `/notify` você permite que clientes (curl, Swagger, frontend)
- *   enviem pedidos de notificação que serão enfileirados no RabbitMQ.
- * - `GET /health` oferece um atalho para verificar se a API está conseguindo falar com o RabbitMQ.
- */
+/* ===========================
+   Express app + middleware
+   =========================== */
 const app = express();
-
-/* Middleware para interpretar JSON no corpo das requisições.
-   Sem isso `req.body` seria `undefined` quando o cliente enviar JSON. */
 app.use(express.json());
 
-/**
- * Swagger / OpenAPI configuration
- * - Gera documentação automaticamente a partir de comentários JSDoc no próprio arquivo.
- * - Disponível em /docs para testar/validar a API durante a apresentação.
- */
 const swaggerOptions = {
   definition: {
     openapi: "3.0.0",
     info: {
       title: "Notification Node PoC",
       version: "1.0.0",
-      description: "API para enfileirar notificações (PoC)"
-    }
+      description: "API para enfileirar notificações (PoC)",
+    },
   },
-  apis: ["./src/api.js"]
+  apis: ["./src/api.js"],
 };
 
 const swaggerSpec = swaggerJSDoc(swaggerOptions);
 app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-/**
- * Health check endpoint
- * - Simples: retorna status de conexão com o RabbitMQ.
- * - Útil para verificar rapidamente se o sistema está operacional.
- */
+/* Health */
 app.get("/health", (req, res) => {
   res.json({
     status: isConnected ? "ok" : "degraded",
     rabbitmq: {
       connected: isConnected,
-      url: RABBIT_URL
-    }
+      url: RABBIT_URL,
+    },
   });
 });
 
-/**
- * Middleware simples para verificar token JWT (Authorization: Bearer <token>)
- */
+/* Middleware JWT (PoC)
+   - Verifica header Authorization: Bearer <token>
+   - Em produção, melhore payload e validação.
+*/
 function authenticateJWT(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) {
@@ -192,11 +180,7 @@ function authenticateJWT(req, res, next) {
   }
 }
 
-/**
- * Rota de login (PoC):
- * - Recebe { username, password } e retorna { token } se credenciais batem com variáveis de ambiente.
- * - Em um sistema real use um banco/Identity Provider.
- */
+/* Login PoC: emite token para ADMIN_USER / ADMIN_PASS */
 app.post("/auth/login", (req, res) => {
   const { username, password } = req.body ?? {};
   if (!username || !password) {
@@ -211,35 +195,30 @@ app.post("/auth/login", (req, res) => {
 
 /**
  * POST /notify
+ * - Protegida por JWT (authenticateJWT)
  * - Valida entrada (to, subject, text|html).
- * - Cria um objeto `job` com metadados mínimos.
- * - Publica na fila do RabbitMQ.
- *
- * Observações:
- * - O endpoint não envia o e-mail diretamente; ele apenas "anota" o pedido na fila.
- * - Um worker separado (node) irá ler a fila e enviar o e-mail de fato.
+ * - Enfileira job no RabbitMQ.
  */
-app.post("/notify", async (req, res) => {
+app.post("/notify", authenticateJWT, async (req, res) => {
   try {
     const { to, subject, text, html } = req.body ?? {};
 
-    // Validação simples e clara
     if (!to || typeof to !== "string" || !subject || typeof subject !== "string" || (!text && !html)) {
       return res.status(400).json({ error: "Campos obrigatórios: to (string), subject (string), text|html" });
     }
 
-    // Monta job com metadata mínima (id, timestamps)
     const job = {
       id: Date.now(),
       to: to.trim(),
       subject: subject.trim(),
       text: text ?? null,
       html: html ?? null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      // meta PoC: quem enfileirou
+      requestedBy: (req.user && req.user.sub) ?? "unknown",
     };
 
     if (!isConnected) {
-      // Indica temporariamente indisponível para o cliente — retry pode ser implementado pelo cliente
       return res.status(503).json({ error: "Serviço temporariamente indisponível. Tente novamente em alguns segundos." });
     }
 
@@ -251,19 +230,15 @@ app.post("/notify", async (req, res) => {
   }
 });
 
-/**
- * Global error handler (fallback)
- * - Captura erros não tratados nas rotas e retorna 500.
- */
+/* Global error handler */
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err?.message ?? err);
   res.status(500).json({ error: "Erro interno" });
 });
 
-/**
- * Startup: conecta no broker e inicia servidor HTTP.
- * - Expondo logs essenciais para demonstrar o fluxo durante a apresentação.
- */
+/* ===========================
+   Startup + shutdown
+   =========================== */
 let server = null;
 
 async function start() {
@@ -286,10 +261,6 @@ start().catch((err) => {
   process.exit(1);
 });
 
-/**
- * Encerramento gracioso — fecha conexão com RabbitMQ e o servidor HTTP.
- * - Importante para evitar mensagens perdidas durante shutdown (PoC).
- */
 async function shutdown(signal) {
   console.log(`Received ${signal} - shutting down gracefully...`);
   try {
