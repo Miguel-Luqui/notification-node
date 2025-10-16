@@ -1,71 +1,55 @@
 version: "3.8"
 
-# Compose para PoC: orquestra RabbitMQ, MailHog, API (publisher) e Worker (consumer).
-# Use este arquivo na raiz do projeto local para subir tudo com:
-#   docker compose up --build
-
+# Compose preparado para:
+# - build local (quando rodar `docker compose up --build`)
+# - ou usar a imagem publicada no GHCR (quando já tiver sido pushada)
+# Para usar a imagem remota, substitua SEU_USUARIO pelo seu usuário/organization GHCR.
 services:
   rabbitmq:
     image: rabbitmq:3.11-management
     container_name: notification-node-rabbitmq
     ports:
-      - "5672:5672"   # AMQP
-      - "15672:15672" # Management UI
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
-    restart: unless-stopped
 
   mailhog:
     image: mailhog/mailhog
     container_name: notification-node-mailhog
     ports:
-      - "1025:1025" # SMTP (worker envia aqui)
-      - "8025:8025" # UI web para visualizar e-mails
-    restart: unless-stopped
+      - "8025:8025"
 
-  # API HTTP que publica mensagens (publisher)
+  # API: se --build for usado, Compose irá construir a imagem localmente a partir do Dockerfile.
+  # Caso contrário, o Compose tentará puxar a imagem ghcr.io/SEU_USUARIO/notification-node:latest.
   notification-node:
+    image: ghcr.io/SEU_USUARIO/notification-node:latest   # trocar SEU_USUARIO antes de usar pull remoto
     build:
-      context: .            # IMPORTANTE: context é '.' porque o compose está dentro notification-node/
+      context: .
       dockerfile: Dockerfile
     container_name: notification-node-api
-    environment:
-      RABBITMQ_URL: amqp://rabbitmq:5672
-      RABBITMQ_QUEUE: notifications
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
-      EMAIL_FROM: "no-reply@local"
-      PORT: "3000"
     ports:
       - "3000:3000"
-    depends_on:
-      - rabbitmq
-      - mailhog
-    restart: unless-stopped
+    environment:
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - RABBITMQ_QUEUE=notifications
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+      - EMAIL_FROM=no-reply@example.com
 
-  # Worker que consome a fila e envia e-mails
+  # Worker: usa mesma imagem; se for build local, será a mesma imagem construída acima.
   notification-worker:
+    image: ghcr.io/SEU_USUARIO/notification-node:latest   # trocar SEU_USUARIO
     build:
-      context: .            # build do mesmo Dockerfile na pasta atual
+      context: .
       dockerfile: Dockerfile
     container_name: notification-node-worker
-    command: ["node", "src/worker.js"]
-    environment:
-      RABBITMQ_URL: amqp://rabbitmq:5672
-      RABBITMQ_QUEUE: notifications
-      RABBITMQ_FAILED_QUEUE: notifications_failed
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
-      EMAIL_FROM: "no-reply@local"
-      MAX_ATTEMPTS: "3"
-      REQUEUE_DELAY_MS: "2000"
+    command: npm run worker
     depends_on:
       - rabbitmq
       - mailhog
-    restart: unless-stopped
 
 volumes:
   rabbitmq-data:

@@ -143,6 +143,125 @@ const swaggerOptions = {
       version: "1.0.0",
       description: "API para enfileirar notificações (PoC)",
     },
+
+    // Adiciona paths explícitos e securitySchemes para evitar
+    // "No operations defined in spec!" quando não há JSDoc annotations.
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+      schemas: {
+        NotifyRequest: {
+          type: "object",
+          properties: {
+            to: { type: "string", example: "user@example.com" },
+            subject: { type: "string", example: "Hello" },
+            text: { type: "string", example: "Plain text body" },
+            html: { type: "string", example: "<p>HTML body</p>" },
+          },
+          required: ["to", "subject"],
+        },
+        LoginRequest: {
+          type: "object",
+          properties: {
+            username: { type: "string", example: "admin" },
+            password: { type: "string", example: "secret" },
+          },
+          required: ["username", "password"],
+        },
+        AuthResponse: {
+          type: "object",
+          properties: {
+            token: { type: "string" },
+            expiresIn: { type: "string" },
+          },
+        },
+        Job: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            to: { type: "string" },
+            subject: { type: "string" },
+            text: { type: ["string", "null"] },
+            html: { type: ["string", "null"] },
+            createdAt: { type: "string", format: "date-time" },
+            requestedBy: { type: "string" },
+          },
+        },
+      },
+    },
+
+    paths: {
+      "/health": {
+        get: {
+          summary: "Health check",
+          responses: {
+            "200": {
+              description: "Health information",
+            },
+          },
+        },
+      },
+
+      "/auth/login": {
+        post: {
+          summary: "Login (PoC) - retorna JWT",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/LoginRequest" },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Token gerado",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/AuthResponse" },
+                },
+              },
+            },
+            "400": { description: "Bad request" },
+            "401": { description: "Invalid credentials" },
+          },
+        },
+      },
+
+      "/notify": {
+        post: {
+          summary: "Enfileira notificação (protegido por JWT)",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/NotifyRequest" },
+              },
+            },
+          },
+          responses: {
+            "202": {
+              description: "Enfileirado",
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/Job" },
+                },
+              },
+            },
+            "400": { description: "Bad request" },
+            "401": { description: "Unauthorized" },
+            "503": { description: "Service unavailable" },
+            "500": { description: "Internal error" },
+          },
+        },
+      },
+    },
   },
   apis: ["./src/api.js"],
 };
