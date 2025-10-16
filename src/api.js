@@ -21,7 +21,7 @@ const CONFIG = {
   QUEUE: process.env.RABBITMQ_QUEUE ?? "notifications",
   PORT: Number(process.env.PORT ?? 3000),
   // JWT / Auth (PoC)
-  JWT_SECRET: process.env.JWT_SECRET ?? "change_me",
+  JWT_SECRET: process.env.JWT_SECRET ?? "jwt_secret",
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "1h",
   ADMIN_USER: process.env.ADMIN_USER ?? "admin",
   ADMIN_PASS: process.env.ADMIN_PASS ?? "secret",
