@@ -3,7 +3,6 @@ version: "3.8"
 # Compose preparado para:
 # - build local (quando rodar `docker compose up --build`)
 # - ou usar a imagem publicada no GHCR (quando já tiver sido pushada)
-# Para usar a imagem remota, substitua SEU_USUARIO pelo seu usuário/organization GHCR.
 services:
   rabbitmq:
     image: rabbitmq:3.11-management
@@ -23,9 +22,9 @@ services:
       - "8025:8025"
 
   # API: se --build for usado, Compose irá construir a imagem localmente a partir do Dockerfile.
-  # Caso contrário, o Compose tentará puxar a imagem ghcr.io/SEU_USUARIO/notification-node:latest.
+  # Caso contrário, o Compose tentará puxar a imagem ghcr.io/migue/notification-node:latest.
   notification-node:
-    image: ghcr.io/SEU_USUARIO/notification-node:latest   # trocar SEU_USUARIO antes de usar pull remoto
+    image: ghcr.io/migue/notification-node:latest
     build:
       context: .
       dockerfile: Dockerfile
