@@ -1,6 +1,5 @@
 # CI: build da imagem Docker e push para GitHub Container Registry (GHCR)
-# - Sem deploy automático (CD) para simplificar PoC.
-# - Usa GITHUB_TOKEN embutido para autenticar no GHCR durante o push.
+# Versão enxuta e com sintaxe válida.
 name: CI - Build & Publish Docker
 
 permissions:
@@ -10,9 +9,9 @@ permissions:
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch: {}
 
 env:
@@ -36,11 +35,12 @@ jobs:
 
       - name: Run tests (if any)
         run: |
+          # Executa npm test se existir no package.json; não falha o job se não houver testes.
           if jq -e '.scripts.test' package.json >/dev/null 2>&1; then
             npm test || true
           fi
 
-      - name: Log in to GHCR
+      - name: Log in to GitHub Container Registry (ghcr.io)
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
