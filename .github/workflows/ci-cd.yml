@@ -1,7 +1,3 @@
-# CI/CD Pipeline (Node + Docker) - PoC
-# - Jobs sequenciais: build -> test -> publish -> docker (build & push)
-# - Publica imagem no GitHub Container Registry (GHCR) usando GITHUB_TOKEN.
-# - Ajuste scripts (npm run build/test) conforme seu package.json.
 name: CI/CD Pipeline
 
 permissions:
