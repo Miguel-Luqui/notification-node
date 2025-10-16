@@ -41,7 +41,7 @@ services:
 
   # Worker: usa mesma imagem; se for build local, será a mesma imagem construída acima.
   notification-worker:
-    image: ghcr.io/SEU_USUARIO/notification-node:latest   # trocar SEU_USUARIO
+    image: ghcr.io/migue/notification-node:latest
     build:
       context: .
       dockerfile: Dockerfile
