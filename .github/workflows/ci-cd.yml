@@ -1,52 +1,37 @@
-name: CI/CD Pipeline
-
-permissions:
-  contents: read
-  packages: write
-  id-token: write
+name: CI/CD Pipeline - Node.js & Docker
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [main, master]
   pull_request:
-    branches: ["main", "master"]
-  workflow_dispatch: {}
-
-env:
-  IMAGE_NAME: ${{ github.repository_owner }}/notification-node
+    branches: [main, master]
 
 jobs:
   build:
-    name: Build (install deps)
+    name: Build (Install dependencies)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache node modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run optional build script (if present)
+      - name: Run build script (if present)
         run: |
-          if npm run | sed -n '1,200p' | grep -q " build"; then
-            npm run build || true
+          if npm run | sed -n '1,200p' | grep -q "build"; then
+            npm run build
+          else
+            echo "No build script found"
           fi
 
-  test:
-    name: Test
+  publish:
+    name: Publish build artifacts (optional)
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -56,45 +41,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests (if defined)
+      - name: Collect build artifacts
         run: |
-          if jq -e '.scripts.test' package.json >/dev/null 2>&1; then
-            npm test
-          else
-            echo "No tests defined, skipping"
-          fi
-
-  publish:
-    name: Publish artifacts (build output)
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build (if present) and collect artifacts
-        run: |
-          if npm run | sed -n '1,200p' | grep -q " build"; then
+          if npm run | sed -n '1,200p' | grep -q "build"; then
             npm run build
           else
             echo "No build script defined"
           fi
 
-      # opcional: publica artefato para uso entre jobs (não estritamente necessário para Docker build)
-      - name: Upload build artifact (optional)
+      # Opcional: publicar artefatos para uso entre jobs
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
@@ -111,9 +72,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU (optional cross-build)
-        uses: docker/setup-qemu-action@v2
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -124,7 +82,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image (multi-platform, cached)
+      - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -132,10 +90,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ghcr.io/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Output image reference
-        run: echo "Image pushed: ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+            ghcr.io/${{ github.repository_owner }}/notification-node:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/notification-node:latest
