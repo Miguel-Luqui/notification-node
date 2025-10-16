@@ -13,6 +13,9 @@ jobs:
   build:
     name: Build (Instalar dependências e gerar artifacts)
     runs-on: ubuntu-latest
+    # Expor output para indicar se artefatos foram gerados (true/false)
+    outputs:
+      artifacts_found: ${{ steps.check_artifacts.outputs.found }}
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
@@ -36,7 +39,21 @@ jobs:
             echo "Nenhum script de build encontrado em package.json"
           fi
 
-      - name: Fazer upload dos artefatos do build
+      - name: Verificar existência de artefatos gerados
+        id: check_artifacts
+        # Seta output 'found' = true se houver ./dist ou ./build
+        run: |
+          found=false
+          for p in dist build; do
+            if [ -e "$p" ]; then
+              found=true
+              break
+            fi
+          done
+          echo "found=$found" >> $GITHUB_OUTPUT
+
+      - name: Fazer upload dos artefatos do build (apenas se existirem)
+        if: ${{ steps.check_artifacts.outputs.found == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact
@@ -48,6 +65,8 @@ jobs:
   publish:
     name: Publicar / Consumir artefatos (sem rebuild)
     needs: build
+    # Executa apenas se o job de build informou que há artefatos
+    if: ${{ needs.build.outputs.artifacts_found == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (opcional)
