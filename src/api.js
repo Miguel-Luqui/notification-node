@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import amqp from "amqplib";
 import swaggerUi from "swagger-ui-express";
 import swaggerJSDoc from "swagger-jsdoc";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -18,6 +19,12 @@ dotenv.config();
 const RABBIT_URL = process.env.RABBITMQ_URL ?? "amqp://rabbitmq:5672";
 const QUEUE = process.env.RABBITMQ_QUEUE ?? "notifications";
 const PORT = Number(process.env.PORT ?? 3000);
+
+// JWT / Auth (PoC)
+const JWT_SECRET = process.env.JWT_SECRET ?? "change_me";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN ?? "1h";
+const ADMIN_USER = process.env.ADMIN_USER ?? "admin";
+const ADMIN_PASS = process.env.ADMIN_PASS ?? "secret";
 
 /**
  * Estado de conexão com RabbitMQ (variáveis globais para simplificar o PoC)
@@ -165,6 +172,41 @@ app.get("/health", (req, res) => {
       url: RABBIT_URL
     }
   });
+});
+
+/**
+ * Middleware simples para verificar token JWT (Authorization: Bearer <token>)
+ */
+function authenticateJWT(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const token = auth.slice(7);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload;
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+/**
+ * Rota de login (PoC):
+ * - Recebe { username, password } e retorna { token } se credenciais batem com variáveis de ambiente.
+ * - Em um sistema real use um banco/Identity Provider.
+ */
+app.post("/auth/login", (req, res) => {
+  const { username, password } = req.body ?? {};
+  if (!username || !password) {
+    return res.status(400).json({ error: "username and password required" });
+  }
+  if (username !== ADMIN_USER || password !== ADMIN_PASS) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  const token = jwt.sign({ sub: username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return res.json({ token, expiresIn: JWT_EXPIRES_IN });
 });
 
 /**
