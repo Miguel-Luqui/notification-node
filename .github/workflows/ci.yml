@@ -1,0 +1,66 @@
+# Nota: este workflow realiza apenas CI (build e publicação de artefatos).
+# Não há etapa de deploy/entrega automática (CD). Para CD é preciso adicionar jobs de deploy
+# que façam push para registries, servidores ou cloud providers, ou usar environments com aprovações.
+name: CI Pipeline - Node.js (build e artifacts)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    name: Build (Instalar dependências e gerar artifacts)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js (com cache de npm)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar script de build (se presente)
+        # Verifica diretamente no package.json se existe "scripts.build" e executa apenas se existir.
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.build ? 0 : 1)"; then
+            npm run build
+          else
+            echo "Nenhum script de build encontrado em package.json"
+          fi
+
+      - name: Fazer upload dos artefatos do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact
+          path: |
+            ./dist
+            ./build
+          if-no-files-found: ignore
+
+  publish:
+    name: Publicar / Consumir artefatos (sem rebuild)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (opcional)
+        uses: actions/checkout@v4
+
+      - name: Baixar artifacts gerados pelo job de build
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifact
+          path: ./artifact
+
+      - name: Listar conteúdo do artifact (verificação rápida)
+        run: ls -R artifact || true
+
+      # Aqui pode entrar o passo de publicação real (ex: docker push, upload para S3, deploy),
+      # usando os arquivos baixados em ./artifact. Não há rebuild nem npm ci neste job para evitar redundância.
